@@ -1,82 +1,38 @@
 # express-chat
 
-## 进度
+## 项目简介
 
-登录注册 ✅  
-好友关系 ✅  
-群组 ✅  
-1v1 聊天 ✅  
-群聊 ✅  
-查询最近聊天会话有问题 查不出群聊来。 ✅
-消息加密
+`express-chat` 是一个基于 Express 框架构建的在线聊天即时通讯（IM）系统。该项目使用 MongoDB 作为数据库，旨在提供一个功能齐全的聊天平台。用户可以通过该平台进行注册和登录，添加好友，创建和加入群组，进行一对一聊天和群聊。项目架构灵活，非常易于扩展。接口文档地址：[apifox](https://apifox.com/apidoc/shared-a49c77a4-d3b9-403a-961d-c344290a0023)。
 
-发送群消息 如果是自己发的 自己的 socket 也会收到
+## 功能清单（✅ 表示已完成，❎ 表示未完成）
 
-## 完整功能
+- ✅ 注册和登录
+- ✅ 添加好友
+- ✅ 好友管理
+- ✅ 群组管理
+- ✅ 单聊
+- ✅ 群聊
+- ❎ 消息加密
+- ❎ 文件发送
 
-1.node 基础 2.登录注册 3.好友关系 4.群组 5.聊天 单聊 6.聊天 群聊 7.前端部分
-8 登录注册
-9 加好友
-10 群组
-11 聊天
+## 技术栈
 
-```
-express-chat
-├─ .gitignore
-├─ .prettierignore
-├─ .prettierrc
-├─ LICENSE
-├─ README.md
-├─ app.js
-├─ config
-│  └─ config.default.js
-├─ controller
-│  ├─ conversationController.js
-│  ├─ friendController.js
-│  ├─ groupsController.js
-│  ├─ messageController.js
-│  ├─ testController.js
-│  └─ userController.js
-├─ index.html
-├─ middleware
-│  ├─ authMiddleware
-│  │  └─ index.js
-│  ├─ responseMiddleware
-│  │  └─ index.js
-│  └─ validation
-│     ├─ errorBack.js
-│     ├─ firendValidation.js
-│     ├─ groupsValidation.js
-│     └─ userValidation.js
-├─ model
-│  ├─ conversationModel.js
-│  ├─ friendModel.js
-│  ├─ groupsModel.js
-│  ├─ index.js
-│  ├─ messageModel.js
-│  ├─ testModel.js
-│  └─ userModel.js
-├─ package.json
-├─ router
-│  ├─ conversationRouters.js
-│  ├─ friendRouters.js
-│  ├─ groupsRouters.js
-│  ├─ index.js
-│  ├─ messageRouters.js
-│  ├─ test.js
-│  └─ userRoutes.js
-├─ services
-│  ├─ conversationService.js
-│  ├─ friendService.js
-│  ├─ groupsService.js
-│  ├─ messageService.js
-│  ├─ testService.js
-│  └─ userService.js
-├─ socket
-│  └─ index.js
-├─ test.js
-└─ utils
-   ├─ authUtils.js
-   ├─ createUserId.js
-   └─ index.j
-```
+- **后端框架**：Express
+- **数据库**：MongoDB
+- **实时通信**：expressWs
+
+## 项目结构
+
+项目的代码结构清晰，模块化设计便于维护和扩展。主要目录包括：
+
+- `app.js`：应用程序的入口文件。
+- `config`：配置文件目录。
+- `controller`：控制器层，处理业务逻辑。
+- `middleware`：中间件，处理请求和响应的预处理。
+- `model`：数据模型，定义数据库结构。
+- `router`：路由层，定义 API 接口。
+- `services`：服务层，封装业务逻辑。
+- `socket`：处理实时通信的逻辑。
+- `utils`：工具函数，提供通用功能。
+
+欢迎对该项目感兴趣的开发者参与贡献和改进！如果对你有帮助，请给个 star 🌟 吧！

@@ -1,0 +1,68 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebSocket Chat</title>
+  <style>
+    ul { list-style-type: none; margin: 0; padding: 0; }
+    li { padding: 8px; margin-bottom: 10px; background-color: #f4f4f4; border-radius: 5px; }
+    input { padding: 10px; width: 90%; margin-right: 10px; }
+    button { padding: 10px; }
+  </style>
+</head>
+<body>
+  <ul id="messages"></ul>
+  <form id="form" action="">
+    <input id="input" autocomplete="off" /><button>Send</button>
+  </form>
+  <script>
+    const token = 'Bearer%20eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NDA2Mjk1ODc0ODUyNzEiLCJ1c2VybmFtZSI6ImxpdW5hIiwiaWQiOiI2NjVkOGE1N2RlZjFiY2E4MWJiYWVhYjUiLCJpYXQiOjE3MjEzMTc0OTMsImV4cCI6MTcyMTQwMzg5M30.swkyid6VtJ1Ve-mDz4xNOJIzJb9jcNZo6LXQLW2ibYY'; // 在实际应用中应通过登录获取并存储在客户端
+
+    var socket = new WebSocket(`ws://${window.location.host}/socket/message?Authorization=${token}`);
+
+    socket.onopen = function() {
+      console.log('WebSocket connection opened');
+    };
+
+    socket.onclose = function(event) {
+      console.log('WebSocket connection closed', event);
+      console.log('Code:', event.code, 'Reason:', event.reason);
+    };
+
+    socket.onerror = function(error) {
+      console.log('WebSocket error: ', error);
+    };
+
+    socket.onmessage = function(event) {
+      console.log('Message from server: ', event.data);
+      var item = document.createElement('li');
+      item.textContent = event.data;
+      document.getElementById('messages').appendChild(item);
+      window.scrollTo(0, document.body.scrollHeight);
+    };
+
+    var form = document.getElementById('form');
+    var input = document.getElementById('input');
+
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      if (input.value && socket.readyState === WebSocket.OPEN) {
+        console.log('Sending message: ', input.value);
+        socket.send(input.value);
+        input.value = '';
+      } else {
+        console.log('Cannot send message, WebSocket not open');
+      }
+    });
+
+    // 如果你希望记录 ping 和 pong 消息，可以添加这些事件监听器
+    socket.addEventListener('ping', function() {
+      console.log('Received ping from server');
+    });
+
+    socket.addEventListener('pong', function() {
+      console.log('Received pong from server');
+    });
+  </script>
+</body>
+</html>

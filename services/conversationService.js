@@ -54,8 +54,6 @@ const getUserConversations = async (userId, type, page = 1, limit = 10) => {
 	const readStatuses = await ConversationReadModel.find({
 		user: userId,
 	})
-	console.log('Read statuses:', readStatuses)
-
 	const readStatusMap = new Map(readStatuses.map((status) => [status.conversation.toString(), status.readAt]))
 
 	// 转换数据格式

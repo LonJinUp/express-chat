@@ -17,6 +17,5 @@ module.exports = {
 		MESSAGE_SENT_CONFIRMATION: 'message_success',
 		//消息发送失败
 		MESSAGE_SEND_ERROR: 'message_error',
-		// ... 其他消息类型 ...
 	},
 }

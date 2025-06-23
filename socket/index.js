@@ -48,7 +48,10 @@ function handleWebSocketConnection(ws, req) {
 	})
 
 	// 处理消息
-	ws.on('message', (msg) => handleIncomingMessage(ws, req, msg, users))
+	ws.on('message', (msg) => {
+		console.log('收到消息', msg)
+		handleIncomingMessage(ws, req, msg, users)
+	})
 
 	// 处理连接关闭
 	ws.on('close', () => {

@@ -1,3 +1,4 @@
+require('dotenv-flow').config()
 const express = require('express')
 const expressWs = require('express-ws')
 const app = express()
@@ -29,14 +30,11 @@ app.use('/api/v1', router)
 initWebSocket(app)
 
 app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/index.html')
+	res.sendFile(__dirname + '/index.html')
 })
 
 const PORT = process.env.PORT || 3001
 
-
-
-
 app.listen(PORT, () => {
-    console.log(`✅Server is running on http://localhost:${PORT}`)
+	console.log(`✅Server is running on http://localhost:${PORT}`)
 })

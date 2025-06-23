@@ -1,6 +1,8 @@
 const mongoose = require('mongoose')
 
 async function main() {
+	console.log('====')
+	console.log(process.env)
 	await mongoose.connect(process.env.BASE_MONGO_URL)
 }
 

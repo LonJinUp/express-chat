@@ -1,6 +1,5 @@
 const { encryptPassword, verifyPassword, generateUserId } = require('../utils')
 const { UserModel } = require('../model')
-const { PASSWORD_SECRET } = require('../config/config.default')
 const jwt = require('jsonwebtoken')
 
 /**
@@ -38,7 +37,9 @@ const register = async (userData) => {
 const login = async (username, plainTextPassword) => {
 	const user = await UserModel.findOne({ username }).select('password userId')
 	if (user && (await verifyPassword(plainTextPassword, user.password))) {
-		const token = jwt.sign({ userId: user.userId, username, id: user._id }, PASSWORD_SECRET, { expiresIn: '24h' })
+		const token = jwt.sign({ userId: user.userId, username, id: user._id }, process.env.PASSWORD_SECRET, {
+			expiresIn: '24h',
+		})
 		return { token }
 	} else {
 		throw new Error('Invalid credentials')

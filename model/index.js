@@ -1,9 +1,7 @@
 const mongoose = require('mongoose')
-const { BASE_MONGO_URL } = require('../config/config.default')
 
 async function main() {
-	console.log(BASE_MONGO_URL, '===BASE_MONGO_URL')
-	await mongoose.connect(BASE_MONGO_URL)
+	await mongoose.connect(process.env.BASE_MONGO_URL)
 }
 
 main()

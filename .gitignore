@@ -26,3 +26,4 @@ src/config/tokens.json
 *.njsproj
 *.sln
 *.sw?
+.env.production

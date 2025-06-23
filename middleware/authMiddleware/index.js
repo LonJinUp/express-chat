@@ -1,5 +1,4 @@
 const jwt = require('jsonwebtoken')
-const { PASSWORD_SECRET } = require('../../config/config.default')
 
 /**
  * 接口鉴权
@@ -12,7 +11,7 @@ const authenticateToken = (req, res, next) => {
 	const authHeader = req.headers['authorization']
 	const token = authHeader && authHeader.split(' ')[1]
 	if (!token) return res.sendStatus(401)
-	jwt.verify(token, PASSWORD_SECRET, (err, user) => {
+	jwt.verify(token, process.env.PASSWORD_SECRET, (err, user) => {
 		if (err) return res.sendStatus(401)
 		req.user = user
 		next()
@@ -27,7 +26,7 @@ const authenticateToken = (req, res, next) => {
  */
 function verifyToken(token) {
 	return new Promise((resolve, reject) => {
-		jwt.verify(token, PASSWORD_SECRET, (err, decoded) => {
+		jwt.verify(token, process.env.PASSWORD_SECRET, (err, decoded) => {
 			if (err) {
 				reject('登录过期')
 			} else {

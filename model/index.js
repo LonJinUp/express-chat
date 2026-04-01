@@ -1,8 +1,6 @@
 const mongoose = require('mongoose')
 
 async function main() {
-	console.log('====')
-	console.log(process.env)
 	await mongoose.connect(process.env.BASE_MONGO_URL)
 }
 
@@ -14,7 +12,6 @@ main()
 		console.log('❌ mongo error:', error)
 	})
 
-//导出模块
 module.exports = {
 	testModel: mongoose.model('testModel', require('./testModel')),
 	UserModel: mongoose.model('User', require('./userModel')),

@@ -126,8 +126,8 @@ const changeUserStatus = async (userId, newStatus) => {
 		}
 		return user
 	} catch (err) {
-		console.error('Error updating user status:', error)
-		throw error
+		console.error('Error updating user status:', err)
+		throw err
 	}
 }
 

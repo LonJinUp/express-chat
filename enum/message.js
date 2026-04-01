@@ -17,5 +17,7 @@ module.exports = {
 		MESSAGE_SENT_CONFIRMATION: 'message_success',
 		//消息发送失败
 		MESSAGE_SEND_ERROR: 'message_error',
+		// WebSocket 首包鉴权成功
+		AUTH_SUCCESS: 'auth_success',
 	},
 }

@@ -9,3 +9,5 @@
     _id: '', //会话id
 }
 
+netstat -aon | findstr "1004"
+

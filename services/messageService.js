@@ -1,5 +1,45 @@
 const mongoose = require('mongoose')
-const { ConversationModel, MessageModel, GroupModel } = require('../model/index')
+const { ConversationModel, MessageModel, GroupModel, UserModel } = require('../model/index')
+
+function idListHasUserId(list, userId) {
+	if (userId == null || !list || !list.length) return false
+	const uid = String(userId)
+	return list.some((item) => String(item) === uid)
+}
+
+/**
+ * 将客户端传入的对方标识解析为 User._id（支持 MongoDB _id 或 userId 字符串）
+ */
+async function resolveRecipientObjectId(recipientId) {
+	if (recipientId == null || recipientId === '') {
+		throw new Error('无效的接收者')
+	}
+	const s = String(recipientId).trim()
+	if (mongoose.Types.ObjectId.isValid(s)) {
+		const byId = await UserModel.findById(s).select('_id')
+		if (byId) return byId._id
+	}
+	const byUserId = await UserModel.findOne({ userId: s }).select('_id')
+	if (byUserId) return byUserId._id
+	throw new Error('无效的接收者')
+}
+
+/**
+ * 校验双方是否为好友（基于 User.friends）
+ */
+async function assertUsersAreFriends(senderId, recipientOid) {
+	if (String(senderId) === recipientOid.toString()) {
+		throw new Error('不能给自己发消息')
+	}
+	const sender = await UserModel.findById(senderId).select('friends')
+	if (!sender) {
+		throw new Error('用户不存在')
+	}
+	const ok = sender.friends.some((fid) => fid.equals(recipientOid))
+	if (!ok) {
+		throw new Error('仅可向好友发送私聊消息')
+	}
+}
 
 /**
  * 创建&&保存私聊消息
@@ -11,6 +51,10 @@ const { ConversationModel, MessageModel, GroupModel } = require('../model/index'
  * @throws {Error} - 如果在事务过程中发生错误，则抛出错误
  */
 const createAndSaveMessage = async (senderId, recipientId, content, contentType) => {
+	const recipientOid = await resolveRecipientObjectId(recipientId)
+	await assertUsersAreFriends(senderId, recipientOid)
+	const peerId = recipientOid.toString()
+
 	// 创建一个新的 MongoDB 会话
 	const session = await mongoose.startSession()
 	session.startTransaction()
@@ -19,14 +63,14 @@ const createAndSaveMessage = async (senderId, recipientId, content, contentType)
 		// 查找是否已有包含这两个成员的私聊会话
 		let conversation = await ConversationModel.findOne({
 			type: 'private',
-			members: { $all: [senderId, recipientId] },
+			members: { $all: [senderId, peerId] },
 		}).session(session) // 在会话内查找
 
 		// 如果没有找到会话，则创建一个新的私聊会话
 		if (!conversation) {
 			conversation = new ConversationModel({
 				type: 'private',
-				members: [senderId, recipientId],
+				members: [senderId, peerId],
 			})
 			// 在事务中保存新会话
 			await conversation.save({ session })
@@ -52,8 +96,7 @@ const createAndSaveMessage = async (senderId, recipientId, content, contentType)
 		await session.commitTransaction()
 		session.endSession()
 
-		// 返回保存后的消息对象
-		return message
+		return { message, recipientPeerId: peerId }
 	} catch (error) {
 		// 如果在事务过程中发生错误，则回滚事务
 		await session.abortTransaction()
@@ -100,7 +143,7 @@ const createAndSaveGroupMessage = async (senderId, groupId, content, contentType
 			throw new Error('群组不存在')
 		}
 
-		if (!group.members.includes(senderId)) {
+		if (!idListHasUserId(group.members, senderId)) {
 			throw new Error('发送者不是该群组的成员')
 		}
 
@@ -146,19 +189,17 @@ const getMessageList = async (userId, conversationId, limit, lastId) => {
 		if (!conversation) {
 			throw new Error('当前会话不存在')
 		}
-
 		if (conversation.type === 'group') {
-			// 检查发送者是否为该群组的成员
+			// 检查是否为该群组的成员
 			const group = await GroupModel.findById(conversation.group)
 			if (!group) {
 				throw new Error('群组不存在')
 			}
-			if (!group.members.includes(userId)) {
+			if (!idListHasUserId(group.members, userId)) {
 				throw new Error('当前成员不是该会话成员')
 			}
 		}
-
-		const isMember = conversation.members.some((memberId) => memberId == userId)
+		const isMember = idListHasUserId(conversation.members, userId)
 		if (!isMember) {
 			throw new Error('当前成员不是该会话成员')
 		}
@@ -167,12 +208,15 @@ const getMessageList = async (userId, conversationId, limit, lastId) => {
 		const query = { conversationId }
 
 		if (lastId) {
-			query._id = { $lt: mongoose.Types.ObjectId(lastId) }
+			if (!mongoose.Types.ObjectId.isValid(lastId)) {
+				throw new Error('无效的消息游标')
+			}
+			query._id = { $lt: new mongoose.Types.ObjectId(lastId) }
 		}
 
 		// 查询消息记录 按照消息ID倒序排列，获取最新的消息
 		const messages = await MessageModel.find(query)
-			.populate('sender', 'username userId avatar') // 添加这行来获取发送者信息
+			.populate('sender', 'username userId avatar') 
 			.sort({ _id: -1 })
 			.limit(parseInt(limit))
 

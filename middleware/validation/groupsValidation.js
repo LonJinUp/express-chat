@@ -19,3 +19,15 @@ module.exports.setGroupAdminValidation = validator([
 	body('groupId').notEmpty().withMessage('群ID不能为空'),
 	body('setUser').notEmpty().withMessage('要设置为管理员的用户ID不能为空'),
 ])
+
+module.exports.transferOwnerValidation = validator([
+	body('groupId').notEmpty().withMessage('群ID不能为空'),
+	body('newOwnerId').notEmpty().withMessage('新群主ID不能为空'),
+])
+
+module.exports.updateAnnouncementValidation = validator([
+	body('groupId').notEmpty().withMessage('群ID不能为空'),
+	body('announcement').isString().withMessage('群公告格式无效').isLength({ max: 500 }).withMessage('群公告不能超过500字'),
+])
+
+module.exports.dissolveValidation = validator([body('groupId').notEmpty().withMessage('群ID不能为空')])

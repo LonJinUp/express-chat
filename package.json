@@ -1,28 +1,36 @@
 {
-  "name": "todo",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "dev": "NODE_ENV=development nodemon app.js",
-    "start": "NODE_ENV=production nodemon app.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "body-parser": "^1.20.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "express-validator": "^7.1.0",
-    "express-ws": "^5.0.2",
-    "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.2.1",
-    "morgan": "^1.10.0",
-    "nodemon": "^3.1.0",
-    "socket.io": "^4.7.5",
-    "uuid": "^9.0.1"
-  }
+	"name": "express-chat",
+	"version": "1.0.0",
+	"description": "",
+	"main": "app.js",
+	"scripts": {
+		"dev": "cross-env NODE_ENV=development nodemon app.js",
+		"start": "cross-env NODE_ENV=production node app.js"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"dependencies": {
+		"ali-oss": "^6.23.0",
+		"bcryptjs": "^2.4.3",
+		"body-parser": "^1.20.2",
+		"cors": "^2.8.5",
+		"dotenv": "^16.4.5",
+		"dotenv-flow": "^4.1.0",
+		"express": "^4.19.2",
+		"express-rate-limit": "^8.3.2",
+		"express-validator": "^7.1.0",
+		"express-ws": "^5.0.2",
+		"helmet": "^8.1.0",
+		"jsonwebtoken": "^9.0.2",
+		"mongoose": "^8.23.0",
+		"morgan": "^1.10.0",
+		"multer": "^2.0.2",
+		"socket.io": "^4.7.5",
+		"uuid": "^9.0.1"
+	},
+	"devDependencies": {
+		"cross-env": "^7.0.3",
+		"nodemon": "^3.1.0"
+	}
 }

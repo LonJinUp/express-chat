@@ -8,3 +8,6 @@
     type: '',//聊天类型
     _id: '', //会话id
 }
+
+netstat -aon | findstr "1004"
+

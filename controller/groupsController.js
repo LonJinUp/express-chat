@@ -1,4 +1,5 @@
 const groupService = require('../services/groupsService')
+const realtimeService = require('../services/realtimeService')
 
 /**
  * 创建群组
@@ -38,8 +39,9 @@ exports.getGroupInfo = async (req, res) => {
  */
 exports.addGroupMember = async (req, res) => {
 	try {
+		const { id: userId } = req.user
 		const { groupId, memberId } = req.body
-		const group = await groupService.addGroupMember(groupId, memberId)
+		const group = await groupService.addGroupMember(groupId, userId, memberId)
 		res.handleSuccess(group)
 	} catch (error) {
 		res.handleError(error.message)
@@ -91,4 +93,44 @@ exports.setGroupAdmin = async (req, res) => {
 	} catch (error) {
 		res.handleError(error.message)
 	}
+}
+
+/**
+ * 取消管理员
+ * @param {Object} req
+ * @param {Object} res
+ */
+exports.cancelGroupAdmin = async (req, res) => {
+	try {
+		const { id: userId } = req.user
+		const { groupId, setUser } = req.body
+		const group = await groupService.cancelGroupAdmin(groupId, userId, setUser)
+		res.handleSuccess(group)
+	} catch (error) {
+		res.handleError(error.message)
+	}
+}
+
+exports.transferGroupOwner = async (req, res) => {
+	try {
+		const result = await groupService.transferGroupOwner(req.body.groupId, req.user.id, req.body.newOwnerId)
+		realtimeService.pushToUsers(result.memberIds, 'group_updated', { groupId: req.body.groupId, action: 'owner_transferred' })
+		res.handleSuccess(result.group, '群主已转让')
+	} catch (error) { res.handleError(error.message) }
+}
+
+exports.updateGroupAnnouncement = async (req, res) => {
+	try {
+		const result = await groupService.updateGroupAnnouncement(req.body.groupId, req.user.id, req.body.announcement)
+		realtimeService.pushToUsers(result.memberIds, 'group_updated', { groupId: req.body.groupId, action: 'announcement_updated' })
+		res.handleSuccess(result.group, '群公告已更新')
+	} catch (error) { res.handleError(error.message) }
+}
+
+exports.dissolveGroup = async (req, res) => {
+	try {
+		const result = await groupService.dissolveGroup(req.body.groupId, req.user.id)
+		realtimeService.pushToUsers(result.memberIds, 'group_dissolved', { groupId: req.body.groupId })
+		res.handleSuccess(null, '群聊已解散')
+	} catch (error) { res.handleError(error.message) }
 }

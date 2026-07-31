@@ -19,6 +19,11 @@ const conversationSchema = new Schema(
 			type: mongoose.Schema.Types.ObjectId,
 			ref: 'Group',
 		}, //群聊ID
+		encryptionMode: {
+			type: String,
+			enum: ['plaintext', 'e2ee'],
+			default: 'plaintext',
+		},
 		lastMessage: {
 			type: Schema.Types.ObjectId,
 			ref: 'Message',

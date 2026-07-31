@@ -6,6 +6,8 @@ const firend = require('./friendRouters')
 const groups = require('./groupsRouters')
 const conversation = require('./conversationRouters')
 const message = require('./messageRouters')
+const e2ee = require('./e2eeRouters')
+const upload = require('./uploadRouters')
 
 router.use(test)
 router.use(user)
@@ -13,5 +15,7 @@ router.use(firend)
 router.use(groups)
 router.use(conversation)
 router.use(message)
+router.use(e2ee)
+router.use(upload)
 
 module.exports = router

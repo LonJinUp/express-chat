@@ -17,6 +17,18 @@ const conversationReadSchema = new Schema(
 			type: Date,
 			default: Date.now,
 		},
+		clearedAt: {
+			type: Date,
+			default: null,
+		},
+		pinnedAt: {
+			type: Date,
+			default: null,
+		},
+		muted: {
+			type: Boolean,
+			default: false,
+		},
 	},
 	{ timestamps: true }
 )

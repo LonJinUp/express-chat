@@ -1,8 +1,16 @@
-const { createAndSaveMessage, createAndSaveGroupMessage, getMessageList } = require('../services/messageService')
+const {
+	createAndSaveMessage,
+	createAndSaveGroupMessage,
+	getMessageList,
+	recallMessage: recallMessageService,
+	deleteMessageForUser,
+	toggleMessageReaction,
+} = require('../services/messageService')
 const userController = require('./userController')
 const { ConversationModel, MessageModel, GroupModel } = require('../model/index')
 const { MESSAGE_TYPE } = require('../enum/message')
 const { validateChatPayload } = require('../utils/wsMessageValidation')
+const realtimeService = require('../services/realtimeService')
 
 const MAX_WS_PAYLOAD_BYTES = 65536
 
@@ -53,13 +61,18 @@ async function handleIncomingMessage(ws, req, msg, users) {
 		return
 	}
 
+	if (parsed?.type === MESSAGE_TYPE.TYPING) {
+		await forwardTypingIndicator(parsed, senderIdFromRequest(req), users)
+		return
+	}
+
 	const validated = validateChatPayload(parsed)
 	if (!validated.ok) {
 		ws.send(JSON.stringify(wrapMessage(MESSAGE_TYPE.MESSAGE_SEND_ERROR, { error: validated.error })))
 		return
 	}
 
-	const { recipientId, content, contentType, conversationType, groupId } = validated.payload
+	const { recipientId, content, contentType, conversationType, groupId, encrypted, nonce, encryptionAlgorithm, clientMessageId, replyTo } = validated.payload
 	const senderId = req.user.id
 
 	try {
@@ -69,16 +82,23 @@ async function handleIncomingMessage(ws, req, msg, users) {
 				senderId,
 				recipientId,
 				content,
-				contentType
+				contentType,
+				{ encrypted, nonce, encryptionAlgorithm },
+				clientMessageId,
+				replyTo
 			)
 			savedMessage = message
+			await savedMessage.populate({ path: 'replyTo', select: 'content contentType encrypted nonce encryptionAlgorithm recalledAt sender' })
+			const outgoingMessage = { ...message.toObject(), clientMessageId }
 			broadcastMessage(
 				[recipientPeerId],
-				wrapMessage(MESSAGE_TYPE.USER_MESSAGE, savedMessage),
+				wrapMessage(MESSAGE_TYPE.USER_MESSAGE, outgoingMessage),
 				users
 			)
 		} else if (conversationType === 'group') {
-			savedMessage = await createAndSaveGroupMessage(senderId, groupId, content, contentType)
+			savedMessage = await createAndSaveGroupMessage(senderId, groupId, content, contentType, clientMessageId, replyTo)
+			await savedMessage.populate({ path: 'replyTo', select: 'content contentType encrypted nonce encryptionAlgorithm recalledAt sender' })
+			const outgoingMessage = { ...savedMessage.toObject(), clientMessageId }
 			const group = await GroupModel.findById(groupId).populate('members')
 
 			// 过滤掉发送者自己
@@ -87,20 +107,57 @@ async function handleIncomingMessage(ws, req, msg, users) {
 				.filter((id) => id !== String(senderId))
 
 			// 发送消息给其他群组成员
-			broadcastMessage(recipientIds, wrapMessage(MESSAGE_TYPE.GROUP_MESSAGE, savedMessage), users)
+			broadcastMessage(recipientIds, wrapMessage(MESSAGE_TYPE.GROUP_MESSAGE, outgoingMessage), users)
 		}
 
 		// 发送确认消息给发送者
 		if (['private', 'group'].includes(conversationType)) {
-			ws.send(JSON.stringify(wrapMessage(MESSAGE_TYPE.MESSAGE_SENT_CONFIRMATION, savedMessage)))
+			ws.send(JSON.stringify(wrapMessage(MESSAGE_TYPE.MESSAGE_SENT_CONFIRMATION, {
+				...savedMessage.toObject(),
+				clientMessageId,
+			})))
 		}
 	} catch (error) {
 		console.error('Error handling message:', error)
 		ws.send(
 			JSON.stringify(
-				wrapMessage(MESSAGE_TYPE.MESSAGE_SEND_ERROR, { error: wsClientErrorMessage(error) })
+				wrapMessage(MESSAGE_TYPE.MESSAGE_SEND_ERROR, { error: wsClientErrorMessage(error), clientMessageId })
 			)
 		)
+	}
+}
+
+function senderIdFromRequest(req) {
+	return String(req.user.id)
+}
+
+async function forwardTypingIndicator(payload, senderId, users) {
+	const active = payload.active === true
+	if (payload.conversationType === 'private') {
+		const recipientId = String(payload.recipientId || '')
+		if (!recipientId || recipientId === senderId) return
+		const conversation = await ConversationModel.findOne({ type: 'private', members: { $all: [senderId, recipientId] } }).select('_id members')
+		if (!conversation) return
+		broadcastMessage([recipientId], wrapMessage(MESSAGE_TYPE.TYPING, {
+			conversationId: conversation._id,
+			conversationType: 'private',
+			senderId,
+			active,
+		}), users)
+		return
+	}
+
+	if (payload.conversationType === 'group') {
+		const groupId = String(payload.groupId || '')
+		const group = await GroupModel.findOne({ _id: groupId, members: senderId }).select('members')
+		if (!group) return
+		const recipientIds = group.members.map(String).filter((id) => id !== senderId)
+		broadcastMessage(recipientIds, wrapMessage(MESSAGE_TYPE.TYPING, {
+			groupId,
+			conversationType: 'group',
+			senderId,
+			active,
+		}), users)
 	}
 }
 
@@ -163,8 +220,47 @@ const getConversationMessageList = async (req, res) => {
 	}
 }
 
+const recallMessage = async (req, res) => {
+	try {
+		const result = await recallMessageService(req.user.id, req.body.messageId)
+		realtimeService.pushToUsers(result.recipientIds, MESSAGE_TYPE.MESSAGE_RECALLED, {
+			messageId: result.message._id,
+			conversationId: result.message.conversationId,
+			recalledAt: result.message.recalledAt,
+			recalledBy: req.user.id,
+		})
+		res.handleSuccess(result.message)
+	} catch (error) { res.handleError(error.message) }
+}
+
+const deleteMessageForMe = async (req, res) => {
+	try {
+		await deleteMessageForUser(req.user.id, req.body.messageId)
+		res.handleSuccess()
+	} catch (error) { res.handleError(error.message) }
+}
+
+const reactToMessage = async (req, res) => {
+	try {
+		const result = await toggleMessageReaction(req.user.id, req.body.messageId, req.body.emoji)
+		const reactions = result.message.reactions.map((item) => ({ emoji: item.emoji, users: item.users.map(String) }))
+		realtimeService.pushToUsers(result.recipientIds, MESSAGE_TYPE.MESSAGE_REACTION, {
+			messageId: result.message._id,
+			conversationId: result.message.conversationId,
+			reactions,
+			userId: req.user.id,
+			emoji: req.body.emoji,
+			active: result.active,
+		})
+		res.handleSuccess({ reactions, active: result.active })
+	} catch (error) { res.handleError(error.message) }
+}
+
 module.exports = {
 	handleIncomingMessage,
 	notifyFriendsStatus,
 	getConversationMessageList,
+	recallMessage,
+	deleteMessageForMe,
+	reactToMessage,
 }

@@ -6,6 +6,7 @@ const {
 } = require('../middleware/authMiddleware')
 const { handleIncomingMessage, notifyFriendsStatus } = require('../controller/messageController')
 const userService = require('../services/userService')
+const realtimeService = require('../services/realtimeService')
 const { MESSAGE_TYPE } = require('../enum/message')
 
 const WS_RATE_WINDOW_MS = 60 * 1000
@@ -142,6 +143,45 @@ let aWss
 // Map<userId, Set<WebSocket>>
 const users = new Map()
 
+function pushToConnectedUsers(userIds, type, data = {}) {
+	let sent = false
+	const payload = JSON.stringify({ type, data })
+
+	userIds.forEach((userId) => {
+		const connections = users.get(String(userId))
+		if (!connections) return
+
+		connections.forEach((ws) => {
+			if (ws.readyState !== ws.OPEN) return
+			try {
+				ws.send(payload)
+				sent = true
+			} catch (error) {
+				console.error('WebSocket push failed:', error)
+			}
+		})
+	})
+
+	return sent
+}
+
+realtimeService.registerPushHandler(pushToConnectedUsers)
+
+realtimeService.registerRevokeSessionHandler((userId, sessionId) => {
+	const connections = users.get(String(userId))
+	if (!connections) return false
+	let closed = false
+	connections.forEach((ws) => {
+		if (String(ws.sessionId || '') !== String(sessionId)) return
+		closed = true
+		try {
+			if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'session_revoked', data: { sessionId } }))
+			ws.close(4002, 'Session revoked')
+		} catch (_) { /* ignore */ }
+	})
+	return closed
+})
+
 function addConnection(userId, ws) {
 	let set = users.get(userId)
 	if (!set) {
@@ -204,6 +244,7 @@ function handleWebSocketConnection(ws, req) {
 	ws.isAlive = true
 	const userId = req.user.id
 	ws.userId = userId
+	ws.sessionId = req.user.sid || ''
 
 	const maxConn = getWsMaxConnPerUser()
 	const existing = users.get(userId)

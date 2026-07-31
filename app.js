@@ -13,6 +13,7 @@ const morgan = require('morgan')
 const router = require('./router')
 const responseMiddleware = require('./middleware/responseMiddleware')
 const { initWebSocket } = require('./socket')
+const { getLocalUploadDir } = require('./services/uploadService')
 
 expressWs(app)
 
@@ -32,6 +33,13 @@ app.use(responseMiddleware)
 
 // 跨域
 app.use(cors())
+
+// 本地上传驱动的公开文件目录；生产环境可由 Nginx/CDN 直接托管。
+app.use('/uploads', express.static(getLocalUploadDir(), {
+	maxAge: '1y',
+	immutable: true,
+	setHeaders: (res) => res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'),
+}))
 
 // 存活探针：仅表示进程可响应，不检查数据库（K8s liveness）
 app.get('/health', (req, res) => {

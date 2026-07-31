@@ -10,19 +10,90 @@
 ## 功能清单（✅ 表示已完成，❎ 表示未完成）
 
 - ✅ 注册和登录
-- ✅ 添加好友
-- ✅ 好友管理
-- ✅ 群组管理
+- ✅ 多设备登录会话管理（设备列表、远程退出、立即断开实时连接）
+- ✅ 登录密码修改（校验旧密码并立即退出其他设备）
+- ✅ 跨设备通知偏好（消息声音、好友申请声音、消息预览）
+- ✅ 用户资料修改（用户名、邮箱、头像）
+- ✅ 好友申请、实时提醒与双向删除
+- ✅ 用户黑名单（拉黑后解除好友并阻止消息与好友申请）
+- ✅ 群组创建、邀请成员、管理员设置、群公告、群主转让、成员退出与群主解散
 - ✅ 单聊
 - ✅ 群聊
-- ❎ 消息加密
-- ❎ 文件发送
+- ✅ 精确未读数量、会话已读、个人侧清空记录、会话置顶与消息免打扰
+- ✅ 图片与普通文件消息（本地存储 / 阿里云 OSS 可配置）
+- ✅ 语音消息（本地存储 / 阿里云 OSS 可配置）
+- ✅ 消息发送中、失败重试与幂等去重
+- ✅ 消息引用回复、两分钟内撤回、仅为自己删除
+- ✅ 私聊与群聊消息表情回应（实时同步）
+- ✅ 实时输入状态（不入库）与客户端聊天记录搜索
+- ✅ 私聊已送达/已读状态与实时已读回执
+- ✅ 可配置的私聊端到端加密与跨设备密钥恢复（实验性）
+- ❎ 群聊端到端加密与多设备密钥同步
+
+## 图片存储配置
+
+开发环境默认使用本地存储：
+
+```dotenv
+UPLOAD_DRIVER=local
+UPLOAD_MAX_IMAGE_MB=10
+UPLOAD_MAX_FILE_MB=25
+PUBLIC_BASE_URL=http://localhost:3992
+```
+
+生产环境可切换阿里云 OSS：
+
+```dotenv
+UPLOAD_DRIVER=oss
+OSS_REGION=oss-cn-hangzhou
+OSS_BUCKET=your-bucket
+OSS_ACCESS_KEY_ID=your-access-key-id
+OSS_ACCESS_KEY_SECRET=your-access-key-secret
+OSS_PUBLIC_BASE_URL=https://cdn.example.com
+```
+
+密钥不要提交到 Git；生产环境建议使用 RAM 最小权限账号和 CDN/自定义域名。
 
 ## 技术栈
 
 - **后端框架**：Express
 - **数据库**：MongoDB
 - **实时通信**：expressWs
+- **端到端加密协议**：NaCl Box（`nacl-box-v1`，由客户端加解密）
+
+## 端到端加密配置
+
+服务端默认不开启端到端加密。在对应环境配置文件中设置以下变量并重启服务：
+
+```dotenv
+E2EE_ENABLED=true
+```
+
+开启后，客户端可为好友私聊登记公钥并按会话切换 `plaintext` / `e2ee` 模式。加密会话只接受携带 `encrypted`、`nonce` 和 `encryptionAlgorithm` 的密文消息，服务端仅保存和转发密文。
+
+> 当前实现支持使用独立恢复密码创建客户端加密的私钥备份，并在新设备恢复历史私聊；服务端不保存恢复密码或明文私钥。尚不支持群聊加密、Signal Double Ratchet、前向保密、入侵后恢复、完整多设备会话同步及安全码核验。未创建备份或忘记恢复密码时，历史密文仍可能无法解密；在完成专业安全审计前，不建议将其用于高安全等级生产场景。
+
+若原设备和云端备份都已丢失，用户可显式重置加密密钥。重置会关闭该用户现有的加密私聊并清除无效备份，旧密文将永久无法解密；客户端必须明确展示风险并二次确认。
+
+## 登录会话配置
+
+新登录会创建可撤销的设备会话，HTTP 与 WebSocket 鉴权都会检查会话状态。用户可查看当前登录设备、退出指定设备或退出除本机外的全部设备；被撤销设备的实时连接会立即关闭。升级前签发的不含会话 ID 的 24 小时令牌会兼容到自然过期。
+
+```dotenv
+# JWT 有效期，默认 30d
+AUTH_TOKEN_EXPIRES_IN=30d
+# 服务端设备会话保留天数，默认 30
+AUTH_SESSION_DAYS=30
+```
+
+相关接口：
+
+- `POST /api/v1/auth/login`：登录，并返回 `token`、`sessionId`。
+- `POST /api/v1/auth/logout`：退出当前设备。
+- `GET /api/v1/auth/sessions`：获取有效设备会话。
+- `DELETE /api/v1/auth/sessions/:sessionId`：退出指定设备。
+- `POST /api/v1/auth/sessions/revoke-others`：退出其他设备。
+- `PUT /api/v1/auth/password`：修改登录密码并退出其他设备。
 
 ## 项目结构
 

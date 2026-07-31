@@ -13,15 +13,27 @@ const messageSchema = new Schema(
 			ref: 'User',
 			required: true,
 		}, //发送者ID
+		clientMessageId: { type: String, default: '' },
+		replyTo: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
 		content: {
 			type: String,
 			required: true,
 		}, //消息内容
 		contentType: {
 			type: String,
-			enum: ['text', 'image', 'file'],
+			enum: ['text', 'image', 'file', 'audio'],
 			default: 'text',
 		}, //消息类型，如文本（text）、图片（image）、文件（file）等
+		encrypted: { type: Boolean, default: false },
+		nonce: { type: String, default: '' },
+		encryptionAlgorithm: { type: String, default: '' },
+		recalledAt: { type: Date, default: null },
+		recalledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+		deletedFor: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+		reactions: [{
+			emoji: { type: String, required: true, maxlength: 8 },
+			users: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+		}],
 		status: {
 			type: String,
 			enum: ['sent', 'read'],
@@ -35,5 +47,11 @@ const messageSchema = new Schema(
 	},
 	{ timestamps: true }
 )
+
+messageSchema.index(
+	{ sender: 1, clientMessageId: 1 },
+	{ unique: true, partialFilterExpression: { clientMessageId: { $type: 'string', $gt: '' } } }
+)
+messageSchema.index({ conversationId: 1, createdAt: -1 })
 
 module.exports = messageSchema

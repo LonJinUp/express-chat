@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken')
+const { SessionModel } = require('../../model')
 
 /**
  * 接口鉴权
@@ -7,15 +8,16 @@ const jwt = require('jsonwebtoken')
  * @param {Object} next
  * @returns
  */
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
 	const authHeader = req.headers['authorization']
 	const token = authHeader && authHeader.split(' ')[1]
 	if (!token) return res.sendStatus(401)
-	jwt.verify(token, process.env.PASSWORD_SECRET, (err, user) => {
-		if (err) return res.sendStatus(401)
-		req.user = user
+	try {
+		req.user = await verifyToken(token)
 		next()
-	})
+	} catch (_) {
+		return res.sendStatus(401)
+	}
 }
 
 /**
@@ -24,16 +26,27 @@ const authenticateToken = (req, res, next) => {
  * @returns {Object} decoded - 解码后的 token 数据
  * @throws {Error} - 如果 token 无效或验证失败，则抛出错误
  */
-function verifyToken(token) {
-	return new Promise((resolve, reject) => {
-		jwt.verify(token, process.env.PASSWORD_SECRET, (err, decoded) => {
-			if (err) {
-				reject('登录过期')
-			} else {
-				resolve(decoded)
-			}
-		})
+async function verifyToken(token) {
+	let decoded
+	try {
+		decoded = jwt.verify(token, process.env.PASSWORD_SECRET)
+	} catch (_) {
+		throw new Error('登录过期')
+	}
+
+	// 旧版 24 小时 token 没有 sid，保留到它们自然过期，避免升级时强制全员退出。
+	if (!decoded.sid) return decoded
+	const session = await SessionModel.findOne({
+		sessionId: decoded.sid,
+		user: decoded.id,
+		revokedAt: null,
+		expiresAt: { $gt: new Date() },
 	})
+	if (!session) throw new Error('登录会话已失效')
+	if (Date.now() - new Date(session.lastActiveAt).getTime() > 5 * 60 * 1000) {
+		SessionModel.updateOne({ _id: session._id }, { lastActiveAt: new Date() }).catch(() => undefined)
+	}
+	return decoded
 }
 
 /**

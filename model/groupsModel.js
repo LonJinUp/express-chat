@@ -10,6 +10,11 @@ const groupSchema = new mongoose.Schema({
 		type: String,
 		default: '',
 	}, //群头像
+	announcement: {
+		type: String,
+		default: '',
+		maxlength: 500,
+	}, // 群公告
 	owner: {
 		type: mongoose.Schema.Types.ObjectId,
 		ref: 'User',

@@ -20,4 +20,5 @@ module.exports = {
 	GroupModel: mongoose.model('Group', require('./groupsModel')),
 	FriendModel: mongoose.model('Friend', require('./friendModel')),
 	ConversationReadModel: mongoose.model('ConversationRead', require('./conversationReadModel')),
+	SessionModel: mongoose.model('Session', require('./sessionModel')),
 }

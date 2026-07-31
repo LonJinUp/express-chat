@@ -1,4 +1,5 @@
 const { UserModel, FriendModel } = require('../model')
+const mongoose = require('mongoose')
 
 /**
  * 根据用户userId查找用户
@@ -22,6 +23,12 @@ const getUserInfoByUserId = async (userId) => {
 const sendFriendRequest = async (userId, friendId) => {
 	//查找是否有该用户
 	const friendInfo = await getUserInfoByUserId(friendId)
+	const [sender, blockedByTarget] = await Promise.all([
+		UserModel.findById(userId).select('blockedUsers'),
+		UserModel.exists({ _id: friendInfo._id, blockedUsers: userId }),
+	])
+	if (sender?.blockedUsers?.some((id) => id.equals(friendInfo._id))) throw new Error('请先将对方移出黑名单')
+	if (blockedByTarget) throw new Error('暂时无法添加该用户')
 
 	// 检查是否已经发送过好友请求
 	const existingRequest = await FriendModel.findOne({
@@ -60,6 +67,13 @@ const sendFriendRequest = async (userId, friendId) => {
  * @returns
  */
 const acceptFriendRequest = async (userId, friendId) => {
+	const blocked = await UserModel.exists({
+		$or: [
+			{ _id: userId, blockedUsers: friendId },
+			{ _id: friendId, blockedUsers: userId },
+		],
+	})
+	if (blocked) throw new Error('当前无法建立好友关系')
 	const friendRequest = await FriendModel.findOneAndUpdate(
 		{ user: friendId, friend: userId, status: 'pending' },
 		{ status: 'accepted' },
@@ -78,6 +92,37 @@ const acceptFriendRequest = async (userId, friendId) => {
 	})
 
 	return friendRequest
+}
+
+const blockUser = async (userId, targetId) => {
+	if (String(userId) === String(targetId)) throw new Error('不能拉黑自己')
+	if (!mongoose.Types.ObjectId.isValid(targetId)) throw new Error('用户不存在')
+	const target = await UserModel.findById(targetId).select('username avatar userId')
+	if (!target) throw new Error('用户不存在')
+
+	const session = await mongoose.startSession()
+	session.startTransaction()
+	try {
+		await UserModel.findByIdAndUpdate(userId, { $addToSet: { blockedUsers: targetId }, $pull: { friends: targetId } }, { session })
+		await UserModel.findByIdAndUpdate(targetId, { $pull: { friends: userId } }, { session })
+		await FriendModel.deleteMany({ $or: [{ user: userId, friend: targetId }, { user: targetId, friend: userId }] }).session(session)
+		await session.commitTransaction()
+		return target
+	} catch (error) {
+		await session.abortTransaction()
+		throw error
+	} finally { session.endSession() }
+}
+
+const unblockUser = async (userId, targetId) => {
+	const result = await UserModel.findOneAndUpdate({ _id: userId, blockedUsers: targetId }, { $pull: { blockedUsers: targetId } })
+	if (!result) throw new Error('该用户不在黑名单中')
+}
+
+const getBlockedUsers = async (userId) => {
+	const user = await UserModel.findById(userId).populate('blockedUsers', 'username avatar userId')
+	if (!user) throw new Error('用户不存在')
+	return user.blockedUsers || []
 }
 
 /**
@@ -121,9 +166,47 @@ const getFriendRequests = async (userId, page, limit) => {
 	}
 }
 
+/**
+ * 双向解除好友关系，保留双方历史消息
+ */
+const removeFriend = async (userId, friendId) => {
+	if (userId === friendId) throw new Error('不能删除自己')
+	const session = await mongoose.startSession()
+	session.startTransaction()
+	try {
+		const [user, friend] = await Promise.all([
+			UserModel.findById(userId).session(session),
+			UserModel.findById(friendId).session(session),
+		])
+		if (!user || !friend) throw new Error('用户不存在')
+		if (!user.friends.some((id) => id.toString() === friendId)) throw new Error('对方不是你的好友')
+
+		await UserModel.findByIdAndUpdate(userId, { $pull: { friends: friendId } }, { session })
+		await UserModel.findByIdAndUpdate(friendId, { $pull: { friends: userId } }, { session })
+		await FriendModel.deleteMany({
+			$or: [
+				{ user: userId, friend: friendId },
+				{ user: friendId, friend: userId },
+			],
+		}).session(session)
+
+		await session.commitTransaction()
+		return friend
+	} catch (error) {
+		await session.abortTransaction()
+		throw error
+	} finally {
+		session.endSession()
+	}
+}
+
 module.exports = {
 	sendFriendRequest,
 	acceptFriendRequest,
 	rejectFriendRequest,
 	getFriendRequests,
+	removeFriend,
+	blockUser,
+	unblockUser,
+	getBlockedUsers,
 }

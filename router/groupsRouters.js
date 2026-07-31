@@ -19,7 +19,22 @@ router.post(
 )
 //获取当前用户已加入的群组
 router.get('/group/joined', authenticateToken, groupsController.getUserGroups)
-//设置管理员
-router.get('/group/setGroupAdmin', authenticateToken, validator.setGroupAdminValidation, groupsController.setGroupAdmin)
+// 设置管理员
+router.post(
+	'/group/setGroupAdmin',
+	authenticateToken,
+	validator.setGroupAdminValidation,
+	groupsController.setGroupAdmin
+)
+// 取消管理员
+router.post(
+	'/group/cancelGroupAdmin',
+	authenticateToken,
+	validator.setGroupAdminValidation,
+	groupsController.cancelGroupAdmin
+)
+router.post('/group/transferOwner', authenticateToken, validator.transferOwnerValidation, groupsController.transferGroupOwner)
+router.post('/group/announcement', authenticateToken, validator.updateAnnouncementValidation, groupsController.updateGroupAnnouncement)
+router.post('/group/dissolve', authenticateToken, validator.dissolveValidation, groupsController.dissolveGroup)
 
 module.exports = router

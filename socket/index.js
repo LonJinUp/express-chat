@@ -1,4 +1,5 @@
 const expressWs = require('express-ws')
+const mongoose = require('mongoose')
 const {
 	socketJwtMiddleware,
 	extractBearerToken,
@@ -7,9 +8,20 @@ const {
 const { handleIncomingMessage, notifyFriendsStatus } = require('../controller/messageController')
 const userService = require('../services/userService')
 const realtimeService = require('../services/realtimeService')
+const presenceService = require('../services/presenceService')
 const { MESSAGE_TYPE } = require('../enum/message')
+const { UserModel } = require('../model')
+const crypto = require('crypto')
 
 const WS_RATE_WINDOW_MS = 60 * 1000
+
+function getHeartbeatIntervalMs() {
+	return Math.max(5000, parseInt(process.env.WS_HEARTBEAT_INTERVAL_MS || '10000', 10))
+}
+
+function getPresenceTouchIntervalMs() {
+	return Math.max(10000, parseInt(process.env.PRESENCE_TOUCH_INTERVAL_MS || '30000', 10))
+}
 
 function getWsMaxMsgPerMin() {
 	return Math.max(1, parseInt(process.env.WS_MAX_MSG_PER_MIN || '120', 10))
@@ -129,7 +141,7 @@ function handleWebSocketPendingAuth(ws, req) {
 			/* ignore */
 		}
 
-		handleWebSocketConnection(ws, req)
+		await handleWebSocketConnection(ws, req)
 	}
 
 	ws.on('message', pendingAuthHandler)
@@ -140,6 +152,9 @@ function handleWebSocketPendingAuth(ws, req) {
 }
 
 let aWss
+let presenceResetPromise = Promise.resolve()
+let presenceReady = Promise.resolve()
+let realtimeReady = Promise.resolve()
 // Map<userId, Set<WebSocket>>
 const users = new Map()
 
@@ -166,6 +181,11 @@ function pushToConnectedUsers(userIds, type, data = {}) {
 }
 
 realtimeService.registerPushHandler(pushToConnectedUsers)
+
+presenceService.onStatusChange(async ({ userId, status, lastSeenAt }) => {
+	await userService.changeUserStatus(userId, status, lastSeenAt)
+	await notifyFriendsStatus(userId, status, users)
+})
 
 realtimeService.registerRevokeSessionHandler((userId, sessionId) => {
 	const connections = users.get(String(userId))
@@ -207,11 +227,32 @@ function initWebSocket(app) {
 	const wsInstance = expressWs(app)
 	aWss = wsInstance.getWss('/socket/message')
 
+	presenceReady = presenceService.init()
+	realtimeReady = realtimeService.init()
+	presenceResetPromise = presenceReady.then(async () => {
+		// Redis 中的连接由 TTL 对账，不能在任一实例启动时清空其他实例的在线状态。
+		if (presenceService.getDriver() === 'redis') return
+		if (mongoose.connection.readyState !== 1) {
+			await new Promise(resolve => mongoose.connection.once('connected', resolve))
+		}
+		return UserModel.updateMany(
+			{ status: 'online' },
+			{ $set: { status: 'offline', lastSeenAt: new Date() } }
+		).catch((error) => console.error('Failed to reset stale presence:', error))
+	})
+
 	app.ws('/socket/message', async (ws, req) => {
+		if (mongoose.connection.readyState !== 1) {
+			ws.close(1013, 'Database unavailable')
+			return
+		}
+		await presenceReady
+		await realtimeReady
+		await presenceResetPromise
 		try {
 			await socketJwtMiddleware(ws, req, { allowDeferredAuth: true })
 			if (req.user) {
-				handleWebSocketConnection(ws, req)
+				await handleWebSocketConnection(ws, req)
 			} else {
 				handleWebSocketPendingAuth(ws, req)
 			}
@@ -225,12 +266,14 @@ function initWebSocket(app) {
 
 	// 心跳检测
 	const interval = setInterval(() => {
+		const now = Date.now()
 		aWss.clients.forEach((ws) => {
 			if (!ws.isAlive) return ws.terminate()
 			ws.isAlive = false
+			ws.lastPingAt = now
 			ws.ping()
 		})
-	}, 10000)
+	}, getHeartbeatIntervalMs())
 
 	wsInstance.getWss().on('close', () => {
 		clearInterval(interval)
@@ -240,11 +283,14 @@ function initWebSocket(app) {
 /**
  * 处理用户的 WebSocket 连接、心跳和断开
  */
-function handleWebSocketConnection(ws, req) {
+async function handleWebSocketConnection(ws, req) {
 	ws.isAlive = true
 	const userId = req.user.id
 	ws.userId = userId
 	ws.sessionId = req.user.sid || ''
+	ws.presenceConnectionId = crypto.randomUUID()
+	ws.lastPongAt = Date.now()
+	ws.lastPresenceWriteAt = 0
 
 	const maxConn = getWsMaxConnPerUser()
 	const existing = users.get(userId)
@@ -253,11 +299,25 @@ function handleWebSocketConnection(ws, req) {
 		return
 	}
 
-	const isFirstConnection = addConnection(userId, ws)
+	addConnection(userId, ws)
+	try {
+		await presenceService.register(userId, ws.presenceConnectionId)
+	} catch (error) {
+		removeConnection(userId, ws)
+		console.error('Failed to register presence:', error)
+		ws.close(1013, 'Presence unavailable')
+		return
+	}
 
 	// 接收 pong 事件以检测连接状态
 	ws.on('pong', () => {
 		ws.isAlive = true
+		ws.lastPongAt = Date.now()
+		if (ws.lastPongAt - ws.lastPresenceWriteAt >= getPresenceTouchIntervalMs()) {
+			ws.lastPresenceWriteAt = ws.lastPongAt
+			presenceService.touch(userId, ws.presenceConnectionId)
+				.catch((error) => console.error('Failed to refresh presence:', error))
+		}
 	})
 
 	// 处理消息（异步错误统一捕获，避免 unhandledRejection）
@@ -266,7 +326,7 @@ function handleWebSocketConnection(ws, req) {
 			sendWsProtocolError(ws, '发送过于频繁，请稍后再试')
 			return
 		}
-		handleIncomingMessage(ws, req, msg, users).catch((err) => {
+		handleIncomingMessage(ws, req, msg).catch((err) => {
 			console.error('WebSocket handleIncomingMessage:', err)
 			sendWsProtocolError(ws, '消息处理失败')
 		})
@@ -274,13 +334,9 @@ function handleWebSocketConnection(ws, req) {
 
 	// 处理连接关闭
 	ws.on('close', () => {
-		const shouldMarkOffline = removeConnection(userId, ws)
-		if (shouldMarkOffline) {
-			notifyFriendsStatus(userId, 'offline', users)
-			userService.changeUserStatus(userId, 'offline').catch((err) => {
-				console.error('Failed to mark user offline:', err)
-			})
-		}
+		removeConnection(userId, ws)
+		presenceService.remove(userId, ws.presenceConnectionId)
+			.catch((err) => console.error('Failed to remove presence:', err))
 	})
 
 	// 处理 WebSocket 错误
@@ -288,13 +344,6 @@ function handleWebSocketConnection(ws, req) {
 		console.error('WebSocket error:', err)
 	})
 
-	// 通知好友用户上线（仅在首个连接建立时）
-	if (isFirstConnection) {
-		notifyFriendsStatus(userId, 'online', users)
-		userService.changeUserStatus(userId, 'online').catch((err) => {
-			console.error('Failed to mark user online:', err)
-		})
-	}
 }
 
 module.exports = {

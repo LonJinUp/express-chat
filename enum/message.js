@@ -38,5 +38,8 @@ module.exports = {
 		TYPING: 'typing',
 		// 会话成员更新了已读时间
 		CONVERSATION_READ: 'conversation_read',
+		MESSAGE_DELIVERY_ACK: 'message_delivery_ack',
+		MESSAGE_DELIVERED: 'message_delivered',
+		MESSAGE_DELIVERY_ACK_SUCCESS: 'message_delivery_ack_success',
 	},
 }

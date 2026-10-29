@@ -1,5 +1,21 @@
 const jwt = require('jsonwebtoken')
-const { SessionModel } = require('../../model')
+const { SessionModel, UserModel } = require('../../model')
+
+function configuredAdminIds() {
+	return String(process.env.ADMIN_USER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean)
+}
+
+const requireAdmin = async (req, res, next) => {
+	try {
+		const user = await UserModel.findById(req.user.id).select('role userId')
+		const configured = configuredAdminIds()
+		if (!user || (user.role !== 'admin' && !configured.includes(String(user._id)) && !configured.includes(user.userId))) {
+			return res.status(403).handleError('仅管理员可以访问', null, 403)
+		}
+		req.admin = user
+		next()
+	} catch (error) { res.handleError(error.message) }
+}
 
 /**
  * 接口鉴权
@@ -100,5 +116,6 @@ module.exports = {
 	socketJwtMiddleware,
 	extractBearerToken,
 	verifyToken,
+	requireAdmin,
 	getTokenFromSocketRequest,
 }

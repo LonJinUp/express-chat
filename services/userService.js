@@ -53,6 +53,7 @@ const register = async (userData) => {
 const login = async (username, plainTextPassword, meta = {}) => {
 	const user = await UserModel.findOne({ username }).select('password userId')
 	if (user && (await verifyPassword(plainTextPassword, user.password))) {
+		await UserModel.updateOne({ _id: user._id }, { lastLoginTime: new Date() })
 		const sessionId = crypto.randomUUID()
 		const days = Math.max(1, parseInt(process.env.AUTH_SESSION_DAYS || '30', 10))
 		await SessionModel.create({ user: user._id, sessionId, ...detectClient(meta), expiresAt: new Date(Date.now() + days * 86400000) })
@@ -134,7 +135,7 @@ const changePassword = async (userId, currentSessionId, currentPassword, newPass
 	return { revokedSessionIds: otherSessions.map((item) => item.sessionId) }
 }
 
-const notificationDefaults = { messageSound: true, friendRequestSound: true, showMessagePreview: true }
+const notificationDefaults = { messageSound: true, friendRequestSound: true, showMessagePreview: true, desktopNotifications: false }
 
 const getNotificationSettings = async (userId) => {
 	const user = await UserModel.findById(userId).select('notificationSettings').lean()
@@ -143,7 +144,7 @@ const getNotificationSettings = async (userId) => {
 }
 
 const updateNotificationSettings = async (userId, settings) => {
-	const allowed = ['messageSound', 'friendRequestSound', 'showMessagePreview']
+	const allowed = ['messageSound', 'friendRequestSound', 'showMessagePreview', 'desktopNotifications']
 	const update = {}
 	allowed.forEach((key) => {
 		if (typeof settings[key] === 'boolean') update[`notificationSettings.${key}`] = settings[key]
@@ -161,7 +162,10 @@ const updateNotificationSettings = async (userId, settings) => {
  */
 const userinfo = async (userId) => {
 	try {
-		const user = await UserModel.findById(userId).select('-password -blockedUsers')
+		const user = await UserModel.findById(userId).select('-password -blockedUsers').lean()
+		if (!user) return null
+		const configured = String(process.env.ADMIN_USER_IDS || '').split(',').map((value) => value.trim()).filter(Boolean)
+		if (configured.includes(String(user._id)) || configured.includes(user.userId)) user.role = 'admin'
 		return user
 	} catch (error) {
 		throw error
@@ -222,11 +226,11 @@ const getFriends = async (userId) => {
  * @param {String} newStatus 状态
  * @returns {Object} 用户信息
  */
-const changeUserStatus = async (userId, newStatus) => {
+const changeUserStatus = async (userId, newStatus, lastSeenAt = new Date()) => {
 	try {
 		let user = await UserModel.findByIdAndUpdate(
 			userId,
-			{ status: newStatus, lastLoginTime: Date.now() },
+			{ status: newStatus, lastSeenAt: new Date(lastSeenAt) },
 			{ new: true, useFindAndModify: false }
 		)
 		if (!user) {

@@ -1,5 +1,5 @@
 /** 与 model/messageModel contentType 枚举一致 */
-const ALLOWED_CONTENT_TYPES = new Set(['text', 'image', 'file', 'audio'])
+const ALLOWED_CONTENT_TYPES = new Set(['text', 'image', 'file', 'audio', 'video'])
 
 const MAX_CONTENT_STRING_LENGTH = parseInt(process.env.WS_MAX_CONTENT_LENGTH || '8000', 10)
 
@@ -12,7 +12,7 @@ function validateChatPayload(parsed) {
 		return { ok: false, error: '消息格式无效' }
 	}
 
-	const { conversationType, content, contentType, recipientId, groupId, encrypted, nonce, encryptionAlgorithm, clientMessageId, replyTo } = parsed
+	const { conversationType, content, contentType, recipientId, groupId, encrypted, nonce, encryptionAlgorithm, clientMessageId, replyTo, mentions } = parsed
 
 	if (conversationType !== 'private' && conversationType !== 'group') {
 		return { ok: false, error: 'conversationType 须为 private 或 group' }
@@ -59,6 +59,9 @@ function validateChatPayload(parsed) {
 		encryptionAlgorithm: typeof encryptionAlgorithm === 'string' ? encryptionAlgorithm : '',
 		clientMessageId: typeof clientMessageId === 'string' && clientMessageId.length <= 100 ? clientMessageId : '',
 		replyTo: typeof replyTo === 'string' && replyTo.length <= 100 ? replyTo : '',
+		mentions: conversationType === 'group' && Array.isArray(mentions)
+			? [...new Set(mentions.filter((id) => typeof id === 'string' && id.length <= 100))].slice(0, 20)
+			: [],
 	}
 
 	return { ok: true, payload }

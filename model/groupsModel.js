@@ -32,6 +32,28 @@ const groupSchema = new mongoose.Schema({
 			ref: 'User',
 		},
 	], // 管理员ID列表
+	memberNicknames: {
+		type: Map,
+		of: String,
+		default: {},
+	}, // 群成员在当前群内使用的昵称，键为用户 ObjectId 字符串
+	joinApprovalRequired: {
+		type: Boolean,
+		default: false,
+	}, // 通过群邀请链接加入时是否需要管理员审核
+	inviteCode: {
+		type: String,
+		default: '',
+		index: true,
+	}, // 可随时重置的群邀请链接口令
+	inviteLinkEnabled: {
+		type: Boolean,
+		default: true,
+	},
+	inviteCodeExpiresAt: {
+		type: Date,
+		default: null,
+	},
 	createdAt: {
 		type: Date,
 		default: Date.now,

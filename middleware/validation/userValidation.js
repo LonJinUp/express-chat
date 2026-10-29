@@ -35,4 +35,5 @@ module.exports.notificationSettingsValidation = validator([
 	body('messageSound').optional().isBoolean().withMessage('消息提示音设置无效'),
 	body('friendRequestSound').optional().isBoolean().withMessage('好友申请提示音设置无效'),
 	body('showMessagePreview').optional().isBoolean().withMessage('消息预览设置无效'),
+	body('desktopNotifications').optional().isBoolean().withMessage('桌面通知设置无效'),
 ])

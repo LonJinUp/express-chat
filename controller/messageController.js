@@ -2,9 +2,18 @@ const {
 	createAndSaveMessage,
 	createAndSaveGroupMessage,
 	getMessageList,
+	syncMessages: syncMessagesService,
+	acknowledgeDeliveredMessages,
+	searchConversationMessages,
 	recallMessage: recallMessageService,
 	deleteMessageForUser,
+	deleteMessagesForUser,
 	toggleMessageReaction,
+	getPinnedMessage,
+	setPinnedMessage,
+	editMessage: editMessageService,
+	setMessageFavorite,
+	getMessageFavorites,
 } = require('../services/messageService')
 const userController = require('./userController')
 const { ConversationModel, MessageModel, GroupModel } = require('../model/index')
@@ -42,9 +51,8 @@ function wrapMessage(type, data) {
  * @param {Object} ws - 当前 WebSocket 连接
  * @param {Object} req - 请求对象，包含用户信息
  * @param {String} msg - 接收到的消息字符串
- * @param {Map<String, Set>} users - 当前已连接的用户映射
  */
-async function handleIncomingMessage(ws, req, msg, users) {
+async function handleIncomingMessage(ws, req, msg) {
 	const raw = Buffer.isBuffer(msg) ? msg.toString('utf8') : String(msg)
 	if (Buffer.byteLength(raw, 'utf8') > MAX_WS_PAYLOAD_BYTES) {
 		ws.send(
@@ -62,7 +70,19 @@ async function handleIncomingMessage(ws, req, msg, users) {
 	}
 
 	if (parsed?.type === MESSAGE_TYPE.TYPING) {
-		await forwardTypingIndicator(parsed, senderIdFromRequest(req), users)
+		await forwardTypingIndicator(parsed, senderIdFromRequest(req))
+		return
+	}
+	if (parsed?.type === MESSAGE_TYPE.MESSAGE_DELIVERY_ACK) {
+		const result = await acknowledgeDeliveredMessages(req.user.id, parsed.messageIds)
+		if (ws.readyState === ws.OPEN) {
+			ws.send(JSON.stringify(wrapMessage(MESSAGE_TYPE.MESSAGE_DELIVERY_ACK_SUCCESS, { messageIds: result.acknowledgedIds })))
+		}
+		result.notifications.forEach(item => realtimeService.pushToUser(item.senderId, MESSAGE_TYPE.MESSAGE_DELIVERED, {
+			messages: item.entries,
+			userId: req.user.id,
+			deliveredAt: item.deliveredAt,
+		}))
 		return
 	}
 
@@ -72,7 +92,7 @@ async function handleIncomingMessage(ws, req, msg, users) {
 		return
 	}
 
-	const { recipientId, content, contentType, conversationType, groupId, encrypted, nonce, encryptionAlgorithm, clientMessageId, replyTo } = validated.payload
+	const { recipientId, content, contentType, conversationType, groupId, encrypted, nonce, encryptionAlgorithm, clientMessageId, replyTo, mentions } = validated.payload
 	const senderId = req.user.id
 
 	try {
@@ -88,18 +108,14 @@ async function handleIncomingMessage(ws, req, msg, users) {
 				replyTo
 			)
 			savedMessage = message
-			await savedMessage.populate({ path: 'replyTo', select: 'content contentType encrypted nonce encryptionAlgorithm recalledAt sender' })
-			const outgoingMessage = { ...message.toObject(), clientMessageId }
-			broadcastMessage(
-				[recipientPeerId],
-				wrapMessage(MESSAGE_TYPE.USER_MESSAGE, outgoingMessage),
-				users
-			)
+			await savedMessage.populate([{ path: 'replyTo', select: 'content contentType encrypted nonce encryptionAlgorithm recalledAt sender' }, { path: 'sender', select: 'username avatar userId' }])
+			const outgoingMessage = { ...message.toObject(), clientMessageId, conversationType: 'private' }
+			realtimeService.pushToUsers([recipientPeerId], MESSAGE_TYPE.USER_MESSAGE, outgoingMessage)
 		} else if (conversationType === 'group') {
-			savedMessage = await createAndSaveGroupMessage(senderId, groupId, content, contentType, clientMessageId, replyTo)
-			await savedMessage.populate({ path: 'replyTo', select: 'content contentType encrypted nonce encryptionAlgorithm recalledAt sender' })
-			const outgoingMessage = { ...savedMessage.toObject(), clientMessageId }
+			savedMessage = await createAndSaveGroupMessage(senderId, groupId, content, contentType, clientMessageId, replyTo, mentions)
+			await savedMessage.populate([{ path: 'replyTo', select: 'content contentType encrypted nonce encryptionAlgorithm recalledAt sender' }, { path: 'sender', select: 'username avatar userId' }])
 			const group = await GroupModel.findById(groupId).populate('members')
+			const outgoingMessage = { ...savedMessage.toObject(), clientMessageId, conversationType: 'group', groupId, groupName: group.name }
 
 			// 过滤掉发送者自己
 			const recipientIds = group.members
@@ -107,7 +123,7 @@ async function handleIncomingMessage(ws, req, msg, users) {
 				.filter((id) => id !== String(senderId))
 
 			// 发送消息给其他群组成员
-			broadcastMessage(recipientIds, wrapMessage(MESSAGE_TYPE.GROUP_MESSAGE, outgoingMessage), users)
+			realtimeService.pushToUsers(recipientIds, MESSAGE_TYPE.GROUP_MESSAGE, outgoingMessage)
 		}
 
 		// 发送确认消息给发送者
@@ -131,19 +147,19 @@ function senderIdFromRequest(req) {
 	return String(req.user.id)
 }
 
-async function forwardTypingIndicator(payload, senderId, users) {
+async function forwardTypingIndicator(payload, senderId) {
 	const active = payload.active === true
 	if (payload.conversationType === 'private') {
 		const recipientId = String(payload.recipientId || '')
 		if (!recipientId || recipientId === senderId) return
 		const conversation = await ConversationModel.findOne({ type: 'private', members: { $all: [senderId, recipientId] } }).select('_id members')
 		if (!conversation) return
-		broadcastMessage([recipientId], wrapMessage(MESSAGE_TYPE.TYPING, {
+		realtimeService.pushToUsers([recipientId], MESSAGE_TYPE.TYPING, {
 			conversationId: conversation._id,
 			conversationType: 'private',
 			senderId,
 			active,
-		}), users)
+		})
 		return
 	}
 
@@ -152,31 +168,13 @@ async function forwardTypingIndicator(payload, senderId, users) {
 		const group = await GroupModel.findOne({ _id: groupId, members: senderId }).select('members')
 		if (!group) return
 		const recipientIds = group.members.map(String).filter((id) => id !== senderId)
-		broadcastMessage(recipientIds, wrapMessage(MESSAGE_TYPE.TYPING, {
+		realtimeService.pushToUsers(recipientIds, MESSAGE_TYPE.TYPING, {
 			groupId,
 			conversationType: 'group',
 			senderId,
 			active,
-		}), users)
-	}
-}
-
-/**
- * 广播消息给指定的用户
- * @param {Array} userIds - 需要广播的用户ID数组
- * @param {Object} message - 要广播的消息
- * @param {Map<String, Set>} users - 已连接的用户映射
- */
-function broadcastMessage(userIds, message, users) {
-	userIds.forEach((userId) => {
-		const connections = users.get(userId)
-		if (!connections) return
-		connections.forEach((client) => {
-			if (client && client.readyState === client.OPEN) {
-				client.send(JSON.stringify(message))
-			}
 		})
-	})
+	}
 }
 
 /**
@@ -220,6 +218,23 @@ const getConversationMessageList = async (req, res) => {
 	}
 }
 
+const syncMessages = async (req, res) => {
+	try {
+		const result = await syncMessagesService(req.user.id, req.query.afterSequence, req.query.limit)
+		res.handleSuccess(result)
+	} catch (error) {
+		res.handleError(error.message)
+	}
+}
+
+const searchMessages = async (req, res) => {
+	try {
+		const { conversationId, keyword = '', resourceType = 'all', limit = 30, lastId = '' } = req.query
+		const result = await searchConversationMessages(req.user.id, conversationId, { keyword, resourceType, limit, lastId })
+		res.handleSuccess(result)
+	} catch (error) { res.handleError(error.message) }
+}
+
 const recallMessage = async (req, res) => {
 	try {
 		const result = await recallMessageService(req.user.id, req.body.messageId)
@@ -240,6 +255,13 @@ const deleteMessageForMe = async (req, res) => {
 	} catch (error) { res.handleError(error.message) }
 }
 
+const deleteMessagesForMe = async (req, res) => {
+	try {
+		const result = await deleteMessagesForUser(req.user.id, req.body.messageIds)
+		res.handleSuccess(result, '消息已删除')
+	} catch (error) { res.handleError(error.message) }
+}
+
 const reactToMessage = async (req, res) => {
 	try {
 		const result = await toggleMessageReaction(req.user.id, req.body.messageId, req.body.emoji)
@@ -256,11 +278,66 @@ const reactToMessage = async (req, res) => {
 	} catch (error) { res.handleError(error.message) }
 }
 
+const getConversationPinnedMessage = async (req, res) => {
+	try {
+		const message = await getPinnedMessage(req.user.id, req.query.conversationId)
+		res.handleSuccess(message)
+	} catch (error) { res.handleError(error.message) }
+}
+
+const pinMessage = async (req, res) => {
+	try {
+		const result = await setPinnedMessage(req.user.id, req.body.messageId, req.body.pinned === true)
+		realtimeService.pushToUsers(result.recipientIds, 'message_pin_changed', {
+			conversationId: result.message.conversationId,
+			groupId: result.groupId,
+			pinned: result.pinned,
+			message: result.pinned ? result.message.toObject() : null,
+			messageId: result.message._id,
+			changedBy: req.user.id,
+		})
+		res.handleSuccess({ pinned: result.pinned, message: result.pinned ? result.message : null })
+	} catch (error) { res.handleError(error.message) }
+}
+
+const editMessage = async (req, res) => {
+	try {
+		const result = await editMessageService(req.user.id, req.body.messageId, req.body.content)
+		realtimeService.pushToUsers(result.recipientIds, 'message_edited', {
+			messageId: result.message._id,
+			conversationId: result.message.conversationId,
+			content: result.message.content,
+			editedAt: result.message.editedAt,
+		})
+		res.handleSuccess(result.message, '消息已编辑')
+	} catch (error) { res.handleError(error.message) }
+}
+
+const favoriteMessage = async (req, res) => {
+	try {
+		const favorite = req.body.favorite === true
+		res.handleSuccess(await setMessageFavorite(req.user.id, req.body.messageId, favorite), favorite ? '已收藏' : '已取消收藏')
+	} catch (error) { res.handleError(error.message) }
+}
+
+const messageFavorites = async (req, res) => {
+	try { res.handleSuccess(await getMessageFavorites(req.user.id, req.query.page, req.query.limit)) }
+	catch (error) { res.handleError(error.message) }
+}
+
 module.exports = {
 	handleIncomingMessage,
 	notifyFriendsStatus,
 	getConversationMessageList,
+	syncMessages,
+	searchMessages,
 	recallMessage,
 	deleteMessageForMe,
+	deleteMessagesForMe,
 	reactToMessage,
+	getConversationPinnedMessage,
+	pinMessage,
+	editMessage,
+	favoriteMessage,
+	messageFavorites,
 }

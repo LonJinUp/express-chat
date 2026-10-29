@@ -24,6 +24,11 @@ const userSchema = new mongoose.Schema({
 	avatar: {
 		type: String,
 	},
+	role: {
+		type: String,
+		enum: ['user', 'admin'],
+		default: 'user',
+	},
 	e2eePublicKey: { type: String, default: '' },
 	e2eeKeyBackup: {
 		ciphertext: { type: String, default: '' },
@@ -43,12 +48,17 @@ const userSchema = new mongoose.Schema({
 		type: Date,
 		default: Date.now,
 	},
+	lastSeenAt: {
+		type: Date,
+		default: null,
+	},
 	friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 	blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 	notificationSettings: {
 		messageSound: { type: Boolean, default: true },
 		friendRequestSound: { type: Boolean, default: true },
 		showMessagePreview: { type: Boolean, default: true },
+		desktopNotifications: { type: Boolean, default: false },
 	},
 	groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Group' }],
 	createdAt: { type: Date, default: Date.now },

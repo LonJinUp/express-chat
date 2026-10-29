@@ -38,3 +38,15 @@ exports.uploadAudio = async (req, res) => {
 		res.handleSuccess({ ...result, url })
 	} catch (error) { res.handleError(error.message) }
 }
+
+exports.uploadVideo = async (req, res) => {
+	try {
+		const result = await uploadService.uploadVideo(req.file)
+		let url = result.url
+		if (url.startsWith('/')) {
+			const configuredBase = String(process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '')
+			url = `${configuredBase || `${req.protocol}://${req.get('host')}`}${url}`
+		}
+		res.handleSuccess({ ...result, url })
+	} catch (error) { res.handleError(error.message) }
+}

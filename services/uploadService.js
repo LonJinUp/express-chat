@@ -33,6 +33,13 @@ const AUDIO_EXTENSIONS = {
 	'audio/ogg': '.ogg',
 	'audio/webm': '.webm',
 }
+const VIDEO_EXTENSIONS = {
+	'video/mp4': '.mp4',
+	'video/quicktime': '.mov',
+	'video/webm': '.webm',
+	'video/x-m4v': '.m4v',
+	'video/3gpp': '.3gp',
+}
 
 function getUploadDriver() {
 	return String(process.env.UPLOAD_DRIVER || 'local').toLowerCase()
@@ -44,7 +51,7 @@ function getLocalUploadDir() {
 
 function createObjectName(mimeType, kind = 'images') {
 	const date = new Date().toISOString().slice(0, 10).replace(/-/g, '/')
-	const extension = kind === 'images' ? IMAGE_EXTENSIONS[mimeType] : kind === 'audio' ? AUDIO_EXTENSIONS[mimeType] : FILE_EXTENSIONS[mimeType]
+	const extension = kind === 'images' ? IMAGE_EXTENSIONS[mimeType] : kind === 'audio' ? AUDIO_EXTENSIONS[mimeType] : kind === 'videos' ? VIDEO_EXTENSIONS[mimeType] : FILE_EXTENSIONS[mimeType]
 	return `${kind}/${date}/${crypto.randomUUID()}${extension}`
 }
 
@@ -135,4 +142,28 @@ async function uploadAudio(file) {
 	return { ...result, size: file.size, mimeType }
 }
 
-module.exports = { uploadImage, uploadFile, uploadAudio, getLocalUploadDir, getUploadDriver, safeOriginalName, IMAGE_EXTENSIONS, FILE_EXTENSIONS, AUDIO_EXTENSIONS }
+async function uploadVideo(file) {
+	let mimeType = file?.mimetype
+	if (mimeType === 'application/octet-stream') {
+		const extension = path.extname(String(file.originalname || '')).toLowerCase()
+		mimeType = Object.keys(VIDEO_EXTENSIONS).find((key) => VIDEO_EXTENSIONS[key] === extension)
+	}
+	const bytes = file?.buffer || Buffer.alloc(0)
+	if (!mimeType || mimeType === 'application/octet-stream') {
+		if (bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) mimeType = 'video/webm'
+		else if (bytes.subarray(4, 8).toString('ascii') === 'ftyp') mimeType = 'video/mp4'
+	}
+	if (!file?.buffer || !mimeType || !VIDEO_EXTENSIONS[mimeType]) throw new Error('仅支持 MP4、MOV 或 WebM 视频')
+	const isWebm = mimeType === 'video/webm' && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
+	const isIsoVideo = ['video/mp4', 'video/quicktime', 'video/x-m4v', 'video/3gpp'].includes(mimeType) && bytes.subarray(4, 8).toString('ascii') === 'ftyp'
+	if (!isWebm && !isIsoVideo) throw new Error('视频内容与文件类型不一致')
+	const normalizedFile = { ...file, mimetype: mimeType }
+	const driver = getUploadDriver()
+	let result
+	if (driver === 'local') result = await uploadLocal(normalizedFile, 'videos')
+	else if (driver === 'oss') result = await uploadOss(normalizedFile, 'videos')
+	else throw new Error(`不支持的上传驱动：${driver}`)
+	return { ...result, size: file.size, mimeType }
+}
+
+module.exports = { uploadImage, uploadFile, uploadAudio, uploadVideo, getLocalUploadDir, getUploadDriver, safeOriginalName, IMAGE_EXTENSIONS, FILE_EXTENSIONS, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS }

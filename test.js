@@ -1,4 +1,4 @@
-{
+module.exports = {
 	name: '', //聊天名称 群聊就是群聊名称 私聊就是对方username
 	members: [], //如果是群聊 则有members字段
 	lastMessage: {
@@ -8,6 +8,3 @@
     type: '',//聊天类型
     _id: '', //会话id
 }
-
-netstat -aon | findstr "1004"
-

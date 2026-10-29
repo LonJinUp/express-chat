@@ -19,7 +19,7 @@ const getUserConversations = async (userId, type, page = 1, limit = 10) => {
 		// 获取所有会话并合并
 		const privateConversations = await ConversationModel.find({ members: userId, type: 'private' })
 			.sort({ updatedAt: -1 })
-			.populate('members', 'username')
+			.populate('members', 'username avatar')
 			.populate('lastMessage')
 			.exec()
 
@@ -32,9 +32,9 @@ const getUserConversations = async (userId, type, page = 1, limit = 10) => {
 				group: { $in: userGroups.map((group) => group._id) },
 			})
 				.sort({ updatedAt: -1 })
-				.populate('members', 'username')
+				.populate('members', 'username avatar')
 				.populate('lastMessage')
-				.populate('group', 'name')
+				.populate('group', 'name avatar')
 				.exec()
 		}
 
@@ -44,9 +44,9 @@ const getUserConversations = async (userId, type, page = 1, limit = 10) => {
 		const query = { members: userId, type }
 		rawConversations = await ConversationModel.find(query)
 			.sort({ updatedAt: -1 })
-			.populate('members', 'username')
+			.populate('members', 'username avatar')
 			.populate('lastMessage')
-			.populate('group', 'name')
+			.populate('group', 'name avatar')
 			.exec()
 	}
 
@@ -80,6 +80,10 @@ const getUserConversations = async (userId, type, page = 1, limit = 10) => {
 				formattedLastMessage = { ...messageObject, content: '[文件]' }
 			} else if (visibleLastMessage.contentType === 'audio') {
 				formattedLastMessage = { ...messageObject, content: '[语音]' }
+			} else if (visibleLastMessage.contentType === 'video') {
+				formattedLastMessage = { ...messageObject, content: '[视频]' }
+			} else if (visibleLastMessage.contentType === 'system') {
+				formattedLastMessage = { ...messageObject, content: messageObject.content }
 			}
 		}
 		const unreadAfter = readState?.clearedAt && readState.clearedAt > readAt ? readState.clearedAt : readAt
@@ -90,6 +94,13 @@ const getUserConversations = async (userId, type, page = 1, limit = 10) => {
 			recalledAt: null,
 			deletedFor: { $ne: userId },
 		})
+		const mentionCount = conv.type === 'group' ? await MessageModel.countDocuments({
+			conversationId: conv._id,
+			mentions: userId,
+			createdAt: { $gt: unreadAfter },
+			recalledAt: null,
+			deletedFor: { $ne: userId },
+		}) : 0
 		const isUnread = unreadCount > 0
 
 		if (conv.type === 'group') {
@@ -102,6 +113,7 @@ const getUserConversations = async (userId, type, page = 1, limit = 10) => {
 				{
 					_id: otherMember?._id,
 					username: otherMember?.username,
+					avatar: otherMember?.avatar || '',
 				},
 			]
 		}
@@ -110,12 +122,15 @@ const getUserConversations = async (userId, type, page = 1, limit = 10) => {
 			_id: conv._id,
 			name,
 			groupId: conv.type === 'group' ? conv.group?._id : undefined,
+			avatar: conv.type === 'group' ? (conv.group?.avatar || '') : (membersList[0]?.avatar || ''),
 			members: membersList,
 			lastMessage: formattedLastMessage || {},
 			updatedAt: conv.updatedAt,
 			type: conv.type,
 			isUnread,
 			unreadCount,
+			mentionCount,
+			wasMentioned: mentionCount > 0,
 			readAt,
 			pinnedAt: readState?.pinnedAt || null,
 			isPinned: Boolean(readState?.pinnedAt),

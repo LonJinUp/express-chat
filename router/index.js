@@ -8,6 +8,8 @@ const conversation = require('./conversationRouters')
 const message = require('./messageRouters')
 const e2ee = require('./e2eeRouters')
 const upload = require('./uploadRouters')
+const report = require('./reportRouters')
+const search = require('./searchRouters')
 
 router.use(test)
 router.use(user)
@@ -17,5 +19,7 @@ router.use(conversation)
 router.use(message)
 router.use(e2ee)
 router.use(upload)
+router.use(report)
+router.use(search)
 
 module.exports = router

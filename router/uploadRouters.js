@@ -10,6 +10,8 @@ const maxFileBytes = Math.max(1, Number(process.env.UPLOAD_MAX_FILE_MB || 25)) *
 const fileUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxFileBytes, files: 1 } })
 const maxAudioBytes = Math.max(1, Number(process.env.UPLOAD_MAX_AUDIO_MB || 15)) * 1024 * 1024
 const audioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxAudioBytes, files: 1 } })
+const maxVideoBytes = Math.max(1, Number(process.env.UPLOAD_MAX_VIDEO_MB || 100)) * 1024 * 1024
+const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: maxVideoBytes, files: 1 } })
 
 function receiveImage(req, res, next) {
 	upload.single('file')(req, res, (error) => {
@@ -34,5 +36,11 @@ router.post('/upload/audio', authenticateToken, (req, res, next) => {
 		return res.handleError(error.code === 'LIMIT_FILE_SIZE' ? `语音不能超过 ${process.env.UPLOAD_MAX_AUDIO_MB || 15}MB` : '语音上传失败')
 	})
 }, controller.uploadAudio)
+router.post('/upload/video', authenticateToken, (req, res, next) => {
+	videoUpload.single('file')(req, res, (error) => {
+		if (!error) return next()
+		return res.handleError(error.code === 'LIMIT_FILE_SIZE' ? `视频不能超过 ${process.env.UPLOAD_MAX_VIDEO_MB || 100}MB` : '视频上传失败')
+	})
+}, controller.uploadVideo)
 
 module.exports = router

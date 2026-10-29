@@ -14,6 +14,8 @@ const messageSchema = new Schema(
 			required: true,
 		}, //发送者ID
 		clientMessageId: { type: String, default: '' },
+		// 跨实例稳定递增的同步游标；历史消息默认为 0，不参与增量补拉。
+		sequence: { type: Number, default: 0 },
 		replyTo: { type: Schema.Types.ObjectId, ref: 'Message', default: null },
 		content: {
 			type: String,
@@ -21,7 +23,7 @@ const messageSchema = new Schema(
 		}, //消息内容
 		contentType: {
 			type: String,
-			enum: ['text', 'image', 'file', 'audio'],
+			enum: ['text', 'image', 'file', 'audio', 'video', 'system'],
 			default: 'text',
 		}, //消息类型，如文本（text）、图片（image）、文件（file）等
 		encrypted: { type: Boolean, default: false },
@@ -29,11 +31,20 @@ const messageSchema = new Schema(
 		encryptionAlgorithm: { type: String, default: '' },
 		recalledAt: { type: Date, default: null },
 		recalledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+		editedAt: { type: Date, default: null },
+		pinnedAt: { type: Date, default: null },
+		pinnedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
 		deletedFor: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+		deliveries: [{
+			_id: false,
+			user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+			deliveredAt: { type: Date, required: true },
+		}],
 		reactions: [{
 			emoji: { type: String, required: true, maxlength: 8 },
 			users: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 		}],
+		mentions: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 		status: {
 			type: String,
 			enum: ['sent', 'read'],
@@ -53,5 +64,11 @@ messageSchema.index(
 	{ unique: true, partialFilterExpression: { clientMessageId: { $type: 'string', $gt: '' } } }
 )
 messageSchema.index({ conversationId: 1, createdAt: -1 })
+messageSchema.index({ 'deliveries.user': 1 })
+messageSchema.index({ conversationId: 1, contentType: 1, encrypted: 1, createdAt: -1 })
+messageSchema.index(
+	{ sequence: 1 },
+	{ unique: true, partialFilterExpression: { sequence: { $type: 'number', $gt: 0 } } }
+)
 
 module.exports = messageSchema

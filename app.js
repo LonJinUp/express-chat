@@ -65,6 +65,12 @@ app.get('/ready', (req, res) => {
 //日志记录
 app.use(morgan('dev'))
 
+// 数据库尚未就绪时快速失败，避免 Mongoose 查询缓冲十秒后才返回错误。
+app.use('/api/v1', (req, res, next) => {
+	if (mongoose.connection.readyState === 1) return next()
+	return res.handleError('数据库正在连接，请稍后重试', null, 503)
+})
+
 // 路由
 app.use('/api/v1', router)
 

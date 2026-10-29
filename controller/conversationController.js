@@ -1,4 +1,5 @@
 const conversationService = require('../services/conversationService')
+const realtimeService = require('../services/realtimeService')
 
 /**
  * 获取当前用户的最近聊天会话
@@ -26,8 +27,39 @@ const markAsRead = async (req, res) => {
 	try {
 		const { conversationId } = req.body
 		const userId = req.user.id
-		await conversationService.markConversationAsRead(conversationId, userId)
-		res.handleSuccess(null, '标记已读成功')
+		const result = await conversationService.markConversationAsRead(conversationId, userId)
+		realtimeService.pushToUsers(result.recipientIds, 'conversation_read', {
+			conversationId,
+			userId,
+			readAt: result.readAt,
+		})
+		res.handleSuccess({ readAt: result.readAt }, '标记已读成功')
+	} catch (error) {
+		res.handleError(error.message)
+	}
+}
+
+const getConversationReadStatus = async (req, res) => {
+	try {
+		const result = await conversationService.getConversationReadStatus(req.query.conversationId, req.user.id)
+		res.handleSuccess(result)
+	} catch (error) { res.handleError(error.message) }
+}
+
+const clearConversationHistory = async (req, res) => {
+	try {
+		const { conversationId } = req.body
+		await conversationService.clearConversationHistory(conversationId, req.user.id)
+		res.handleSuccess(null, '聊天记录已清空')
+	} catch (error) {
+		res.handleError(error.message)
+	}
+}
+
+const updateConversationPreferences = async (req, res) => {
+	try {
+		const result = await conversationService.updateConversationPreferences(req.body, req.user.id)
+		res.handleSuccess(result, '会话设置已更新')
 	} catch (error) {
 		res.handleError(error.message)
 	}
@@ -41,7 +73,7 @@ const markAsRead = async (req, res) => {
 const findConversationByTypeAndId = async (req, res) => {
 	try {
 		const { type, id } = req.query
-		const conversationId = await conversationService.findConversationByTypeAndId(type, id)
+		const conversationId = await conversationService.findConversationByTypeAndId(type, id, req.user.id)
 		res.handleSuccess(conversationId)
 	} catch (error) {
 		res.handleError(error.message)
@@ -51,5 +83,8 @@ const findConversationByTypeAndId = async (req, res) => {
 module.exports = {
 	getUserConversationList,
 	markAsRead,
+	getConversationReadStatus,
+	clearConversationHistory,
+	updateConversationPreferences,
 	findConversationByTypeAndId,
 }
